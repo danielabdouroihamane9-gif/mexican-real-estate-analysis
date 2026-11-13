@@ -41,8 +41,8 @@ The reported annual changes also differed across metropolitan areas:
 | Guadalajara       |                             +11.3% |
 | Tijuana           |                             +10.6% |
 | Monterrey         |                              +9.4% |
-| Puebla–Tlaxcala  |                              +8.7% |
-| Querétaro        |                              +7.2% |
+| Puebla–Tlaxcala   |                              +8.7% |
+| Querétaro         |                              +7.2% |
 | Valley of Mexico  |                              +5.1% |
 | Toluca            |                              +4.6% |
 
@@ -203,15 +203,15 @@ Correlation alone will not be treated as proof of causation.
 
 The investigation will consider the following hypotheses.
 
-**Hypothesis 1 — Property Size**
+### Hypothesis 1 — Property Size
 
 Larger properties tend to have higher listing prices.
 
-**Hypothesis 2 — Location**
+### Hypothesis 2 — Location
 
 Properties in certain geographical areas tend to have higher listing prices than comparable properties in other areas.
 
-**Hypothesis 3 — Combined Influence**
+### Hypothesis 3 — Combined Influence
 
 Property size and location may both be associated with listing prices, and their relationships may differ depending on the geographical area.
 
@@ -329,27 +329,27 @@ The following sources provide broader context for understanding the Mexican hous
 
    Project description: Hands-on Data Science in the Mexican Real Estate Market.
 
-   https://www.wqu.edu/data-science-lab
+   <https://www.wqu.edu/data-science-lab>
 2. **Sociedad Hipotecaria Federal (SHF) — Housing Price Index, 2025–2026**
 
    Official housing price index publications and geographical breakdowns.
 
-   https://www.gob.mx/shf/documentos/indice-shf-de-precios-de-la-vivienda-en-mexico-2025-a-2026
+   <https://www.gob.mx/shf/documentos/indice-shf-de-precios-de-la-vivienda-en-mexico-2025-a-2026>
 3. **Sociedad Hipotecaria Federal (SHF) — Fourth Quarter 2025 Results**
 
    National housing-price statistics and metropolitan-area comparisons.
 
-   https://www.gob.mx/shf/documentos/indice-shf-de-precios-de-la-vivienda-en-mexico-cuarto-trimestre-de-2025
+   <https://www.gob.mx/shf/documentos/indice-shf-de-precios-de-la-vivienda-en-mexico-cuarto-trimestre-de-2025>
 4. **OECD — Economic Surveys: Mexico 2024**
 
    Housing affordability, price developments, and housing supply and demand.
 
-   https://www.oecd.org/en/publications/oecd-economic-surveys-mexico-2024_b8d974db-en/full-report/component-8.html
+   <https://www.oecd.org/en/publications/oecd-economic-surveys-mexico-2024_b8d974db-en/full-report/component-8.html>
 5. **Banco de México — Housing Registry for Mexico**
 
    Documentation of Mexican housing data, including property characteristics, geographical information, and prices.
 
-   https://www.banxico.org.mx/apps/econlab/fichas/espanol/%7B85EB273E-668F-DC4D-1B3F-C928773F8810%7D.pdf
+   <https://www.banxico.org.mx/apps/econlab/fichas/espanol/%7B85EB273E-668F-DC4D-1B3F-C928773F8810%7D.pdf>
 
 ---
 
