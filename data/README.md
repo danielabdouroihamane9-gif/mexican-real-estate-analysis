@@ -1,4 +1,3 @@
-
 # Data Documentation — Mexican Real Estate Market
 
 ## 1. Research Context
@@ -41,8 +40,8 @@ The reported annual changes also differed across metropolitan areas:
 | Guadalajara       |                             +11.3% |
 | Tijuana           |                             +10.6% |
 | Monterrey         |                              +9.4% |
-| Puebla–Tlaxcala   |                              +8.7% |
-| Querétaro         |                              +7.2% |
+| Puebla–Tlaxcala  |                              +8.7% |
+| Querétaro        |                              +7.2% |
 | Valley of Mexico  |                              +5.1% |
 | Toluca            |                              +4.6% |
 
@@ -261,18 +260,18 @@ The project uses real estate listings from Mexico City, as described by WorldQua
 
 The exact dataset metadata will be documented after inspecting the supplied files.
 
-| Metadata                                    | Status                                            |
-| ------------------------------------------- | ------------------------------------------------- |
-| Dataset name                                | To be confirmed                                   |
-| Original source                             | To be confirmed                                   |
-| Geographic coverage                         | Mexico City, according to WQU project description |
-| Time period                                 | To be confirmed                                   |
-| Number of records                           | To be calculated                                  |
-| Number of variables                         | To be calculated                                  |
-| File formats                                | To be inspected                                   |
-| Currency                                    | To be verified                                    |
-| Area measurement units                      | To be verified                                    |
-| Data license and redistribution permissions | To be checked                                     |
+| Metadata                                    | Status                                                                                                                                                                                                                                 |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dataset name                                | Mexican Real Estate Listings (`mexico-real-estate-1.csv`, `2.csv`, `3.csv`; combined clean output: `mexico-real-estate-combined-clean.csv`)                                                                                    |
+| Original source                             | WorldQuant University (WQU) Applied Data Science Lab — Project 1 curriculum files (derived from Properati Mexico real estate listings)                                                                                                |
+| Geographic coverage                         | **Nationwide across Mexico (multiple Mexican states)** , including Distrito Federal (Mexico City), Jalisco, Nuevo León, Estado de México, Colima, and others                                                                   |
+| Time period                                 | Historical real estate listing snapshot provided in the WQU curriculum dataset (no listing-date timestamp column included in the raw CSVs)                                                                                             |
+| Number of records                           | **2,100 raw rows** (700 per raw file) → **2,082 clean analytical records** (after removing 5 raw exact duplicates and 18 standardized duplicate keys) and **1,734 geospatial records** (with valid `lat`/`lon`) |
+| Number of variables                         | **6 core analytical variables** (`property_type`, `state`, `lat`, `lon`, `area_m2`, `price_usd`) plus derived `price_per_m2`                                                                                       |
+| File formats                                | Comma-Separated Values (`.csv`) for raw and processed tables; JSON (`cleaning_audit.json`) for pipeline audit logs                                                                                                                 |
+| Currency                                    | **USD (`price_usd`)** — raw MXN prices standardized to USD at a documented, configurable **19 MXN/USD** exchange rate                                                                                                   |
+| Area measurement units                      | Square meters (`area_m2`)                                                                                                                                                                                                            |
+| Data license and redistribution permissions | Provided for educational coursework under WorldQuant University (WQU) curriculum terms; check WQU terms before redistributing raw CSV files publicly                                                                                   |
 
 ## 10. Data Storage Structure
 
@@ -302,6 +301,46 @@ Processed files should be derived from the original data through documented step
 
 **Data management principle:** Do not overwrite original datasets during cleaning and preprocessing.
 
+## 10A. Verified Cleaning and Exchange-Rate Assumption
+
+The project uses `src/real_estate_analysis.py` to rebuild the processed files.
+The raw Mexican CSV files remain unchanged.
+
+Dataset 2 uses `price_mxn` and is converted to USD with:
+
+```text
+price_usd = price_mxn / 19
+```
+
+The repository does not contain documentation establishing the origin or date of this
+19 MXN per USD assumption. It is therefore recorded as unresolved and is not treated as
+a verified historical exchange rate. Conclusions involving Dataset 2 prices have this
+limitation.
+
+## 10B. Provenance and Auditability
+
+The cleaning module adds `source_dataset`, `price_mxn`, and
+`conversion_rate_mxn_per_usd` to the analytical output. Dataset 1 and Dataset 3
+record USD prices; Dataset 2 records MXN prices and uses the configurable unresolved
+assumption in `src/real_estate_analysis.py`.
+
+`data/processed/cleaning_audit.json` records:
+
+- Raw row count per source.
+- Exact duplicate rows within each raw source.
+- Invalid or missing core values.
+- Duplicate standardized keys removed within each source. This metric is not a raw exact
+  duplicate count: it counts repeated standardized analytical keys after fields are parsed.
+- Potential standardized overlaps across sources are counted only when a key occurs in at
+  least two distinct source datasets. The report gives the distinct matching-key count,
+  the number of rows belonging to those keys, and the involved source names.
+- Final analytical and geospatial row counts.
+
+An exact standardized cross-source overlap is not interpreted as a confirmed duplicate
+because the data contain no unique listing identifier. The audit separately distinguishes
+raw exact duplicates, within-source cleaning duplicates, and cross-source potential
+overlaps.
+
 ## 11. Data Quality and Limitations
 
 Real estate listing data may have limitations that affect the conclusions.
@@ -329,27 +368,27 @@ The following sources provide broader context for understanding the Mexican hous
 
    Project description: Hands-on Data Science in the Mexican Real Estate Market.
 
-   <https://www.wqu.edu/data-science-lab>
+   [https://www.wqu.edu/data-science-lab](https://www.wqu.edu/data-science-lab)
 2. **Sociedad Hipotecaria Federal (SHF) — Housing Price Index, 2025–2026**
 
    Official housing price index publications and geographical breakdowns.
 
-   <https://www.gob.mx/shf/documentos/indice-shf-de-precios-de-la-vivienda-en-mexico-2025-a-2026>
+   [https://www.gob.mx/shf/documentos/indice-shf-de-precios-de-la-vivienda-en-mexico-2025-a-2026](https://www.gob.mx/shf/documentos/indice-shf-de-precios-de-la-vivienda-en-mexico-2025-a-2026)
 3. **Sociedad Hipotecaria Federal (SHF) — Fourth Quarter 2025 Results**
 
    National housing-price statistics and metropolitan-area comparisons.
 
-   <https://www.gob.mx/shf/documentos/indice-shf-de-precios-de-la-vivienda-en-mexico-cuarto-trimestre-de-2025>
+   [https://www.gob.mx/shf/documentos/indice-shf-de-precios-de-la-vivienda-en-mexico-cuarto-trimestre-de-2025](https://www.gob.mx/shf/documentos/indice-shf-de-precios-de-la-vivienda-en-mexico-cuarto-trimestre-de-2025)
 4. **OECD — Economic Surveys: Mexico 2024**
 
    Housing affordability, price developments, and housing supply and demand.
 
-   <https://www.oecd.org/en/publications/oecd-economic-surveys-mexico-2024_b8d974db-en/full-report/component-8.html>
+   [https://www.oecd.org/en/publications/oecd-economic-surveys-mexico-2024_b8d974db-en/full-report/component-8.html](https://www.oecd.org/en/publications/oecd-economic-surveys-mexico-2024_b8d974db-en/full-report/component-8.html)
 5. **Banco de México — Housing Registry for Mexico**
 
    Documentation of Mexican housing data, including property characteristics, geographical information, and prices.
 
-   <https://www.banxico.org.mx/apps/econlab/fichas/espanol/%7B85EB273E-668F-DC4D-1B3F-C928773F8810%7D.pdf>
+   [https://www.banxico.org.mx/apps/econlab/fichas/espanol/%7B85EB273E-668F-DC4D-1B3F-C928773F8810%7D.pdf](https://www.banxico.org.mx/apps/econlab/fichas/espanol/%7B85EB273E-668F-DC4D-1B3F-C928773F8810%7D.pdf)
 
 ---
 
