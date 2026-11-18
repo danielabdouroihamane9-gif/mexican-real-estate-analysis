@@ -40,8 +40,8 @@ The reported annual changes also differed across metropolitan areas:
 | Guadalajara       |                             +11.3% |
 | Tijuana           |                             +10.6% |
 | Monterrey         |                              +9.4% |
-| Puebla–Tlaxcala  |                              +8.7% |
-| Querétaro        |                              +7.2% |
+| Puebla–Tlaxcala   |                              +8.7% |
+| Querétaro         |                              +7.2% |
 | Valley of Mexico  |                              +5.1% |
 | Toluca            |                              +4.6% |
 
@@ -260,18 +260,18 @@ The project uses real estate listings from Mexico City, as described by WorldQua
 
 The exact dataset metadata will be documented after inspecting the supplied files.
 
-| Metadata                                    | Status                                                                                                                                                                                                                                 |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Dataset name                                | Mexican Real Estate Listings (`mexico-real-estate-1.csv`, `2.csv`, `3.csv`; combined clean output: `mexico-real-estate-combined-clean.csv`)                                                                                    |
-| Original source                             | WorldQuant University (WQU) Applied Data Science Lab — Project 1 curriculum files (derived from Properati Mexico real estate listings)                                                                                                |
-| Geographic coverage                         | **Nationwide across Mexico (multiple Mexican states)** , including Distrito Federal (Mexico City), Jalisco, Nuevo León, Estado de México, Colima, and others                                                                   |
-| Time period                                 | Historical real estate listing snapshot provided in the WQU curriculum dataset (no listing-date timestamp column included in the raw CSVs)                                                                                             |
-| Number of records                           | **2,100 raw rows** (700 per raw file) → **2,082 clean analytical records** (after removing 5 raw exact duplicates and 18 standardized duplicate keys) and **1,734 geospatial records** (with valid `lat`/`lon`) |
-| Number of variables                         | **6 core analytical variables** (`property_type`, `state`, `lat`, `lon`, `area_m2`, `price_usd`) plus derived `price_per_m2`                                                                                       |
-| File formats                                | Comma-Separated Values (`.csv`) for raw and processed tables; JSON (`cleaning_audit.json`) for pipeline audit logs                                                                                                                 |
-| Currency                                    | **USD (`price_usd`)** — raw MXN prices standardized to USD at a documented, configurable **19 MXN/USD** exchange rate                                                                                                   |
-| Area measurement units                      | Square meters (`area_m2`)                                                                                                                                                                                                            |
-| Data license and redistribution permissions | Provided for educational coursework under WorldQuant University (WQU) curriculum terms; check WQU terms before redistributing raw CSV files publicly                                                                                   |
+| Metadata | Status |
+| --- | --- |
+| Dataset name | Mexican Real Estate Listings (`mexico-real-estate-1.csv`, `2.csv`, `3.csv`; combined clean output: `mexico-real-estate-combined-clean.csv`) |
+| Original source | WorldQuant University (WQU) Applied Data Science Lab — Project 1 curriculum files (derived from Properati Mexico real estate listings) |
+| Geographic coverage | **Nationwide across Mexico (multiple Mexican states)**, including Distrito Federal (Mexico City), Jalisco, Nuevo León, Estado de México, Colima, and others |
+| Time period | Historical real estate listing snapshot provided in the WQU curriculum dataset (no listing-date timestamp column included in the raw CSVs) |
+| Number of records | **2,100 raw rows** (700 per raw file) → **2,082 clean analytical records** (after removing 5 raw exact duplicates and 18 standardized duplicate keys) and **1,734 geospatial records** (with valid `lat`/`lon`) |
+| Number of variables | **6 core analytical variables** (`property_type`, `state`, `lat`, `lon`, `area_m2`, `price_usd`) plus derived `price_per_m2` |
+| File formats | Comma-Separated Values (`.csv`) for raw and processed tables; JSON (`cleaning_audit.json`) for pipeline audit logs |
+| Currency | **USD (`price_usd`)** — raw MXN prices standardized to USD at a documented, configurable **19 MXN/USD** exchange rate |
+| Area measurement units | Square meters (`area_m2`) |
+| Data license and redistribution permissions | Provided for educational coursework under WorldQuant University (WQU) curriculum terms; check WQU terms before redistributing raw CSV files publicly |
 
 ## 10. Data Storage Structure
 
