@@ -189,7 +189,9 @@ python -m streamlit run app/Home.py
 ```
 
 The home page summarizes market metrics, listing distributions, state coverage,
-and the nested-model research finding. The other sidebar pages are placeholders
+and the nested-model research finding. The Market Explorer supports combined
+state, property type, area, and price filters, with metrics, charts, a filtered
+table, and a matching CSV export. Geographic Analysis and Price Drivers remain
 for later project phases.
 
 ## 9. Learning Objectives

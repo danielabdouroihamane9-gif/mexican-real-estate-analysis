@@ -9,6 +9,11 @@ from src.dashboard.data_loader import (
     DashboardDataError,
     load_processed_datasets,
 )
+from src.dashboard.filtering import (
+    available_category_values,
+    filter_properties,
+    numeric_range_bounds,
+)
 from src.dashboard.metrics import (
     aggregate_property_types,
     aggregate_states,
@@ -192,6 +197,156 @@ class DashboardDataLoaderTests(unittest.TestCase):
             f"{len(analytical):,}",
         )
         self.assertEqual(len(app.get("plotly_chart")), 4)
+
+    def test_market_explorer_updates_all_outputs_for_a_state_filter(self):
+        analytical, _ = load_processed_datasets()
+        state = available_category_values(analytical, "state")[0]
+        property_types = available_category_values(analytical, "property_type")
+        expected = filter_properties(
+            analytical,
+            states=[state],
+            property_types=property_types,
+            area_range=numeric_range_bounds(analytical, "area_m2"),
+            price_range=numeric_range_bounds(analytical, "price_usd"),
+        )
+        explorer_page = (
+            Path(__file__).resolve().parents[1]
+            / "app"
+            / "pages"
+            / "1_Market_Explorer.py"
+        )
+
+        app = AppTest.from_file(str(explorer_page), default_timeout=30).run()
+        app.multiselect(key="explorer_states").set_value([state]).run()
+
+        self.assertEqual(len(app.exception), 0)
+        displayed_metrics = {metric.label: metric.value for metric in app.metric}
+        self.assertEqual(displayed_metrics["Listings"], f"{len(expected):,}")
+        self.assertEqual(len(app.get("plotly_chart")), 3)
+        self.assertEqual(len(app.dataframe), 1)
+        self.assertEqual(len(app.get("download_button")), 1)
+
+
+class DashboardFilteringTests(unittest.TestCase):
+    def setUp(self):
+        self.dataframe = pd.DataFrame(
+            {
+                "state": ["Puebla", "Jalisco", "Puebla", "Yucatán"],
+                "property_type": ["house", "apartment", "apartment", "house"],
+                "area_m2": [100.0, 80.0, 150.0, 200.0],
+                "price_usd": [100_000.0, 120_000.0, 180_000.0, 300_000.0],
+                "price_per_m2": [1_000.0, 1_500.0, 1_200.0, 1_500.0],
+            }
+        )
+
+    def test_state_filter(self):
+        result = filter_properties(self.dataframe, states=["Puebla"])
+
+        self.assertEqual(result.index.tolist(), [0, 2])
+        self.assertEqual(set(result["state"]), {"Puebla"})
+
+    def test_property_type_filter(self):
+        result = filter_properties(self.dataframe, property_types=["apartment"])
+
+        self.assertEqual(result.index.tolist(), [1, 2])
+        self.assertEqual(set(result["property_type"]), {"apartment"})
+
+    def test_area_filter_includes_bounds(self):
+        result = filter_properties(self.dataframe, area_range=(100.0, 150.0))
+
+        self.assertEqual(result.index.tolist(), [0, 2])
+
+    def test_price_filter_includes_bounds(self):
+        result = filter_properties(self.dataframe, price_range=(120_000.0, 180_000.0))
+
+        self.assertEqual(result.index.tolist(), [1, 2])
+
+    def test_combined_filters_apply_to_the_same_rows(self):
+        result = filter_properties(
+            self.dataframe,
+            states=["Puebla", "Yucatán"],
+            property_types=["house"],
+            area_range=(100.0, 200.0),
+            price_range=(100_000.0, 250_000.0),
+        )
+
+        self.assertEqual(result.index.tolist(), [0])
+
+    def test_empty_category_selection_returns_no_rows(self):
+        result = filter_properties(self.dataframe, states=[])
+
+        self.assertTrue(result.empty)
+        self.assertListEqual(result.columns.tolist(), self.dataframe.columns.tolist())
+
+    def test_missing_and_invalid_values_are_excluded_by_active_filters(self):
+        dataframe = pd.DataFrame(
+            {
+                "state": ["Puebla", None, "Jalisco", "Yucatán"],
+                "property_type": ["house", "house", None, "apartment"],
+                "area_m2": [100.0, None, "invalid", float("inf")],
+                "price_usd": [10_000.0, 20_000.0, 30_000.0, float("-inf")],
+            }
+        )
+
+        result = filter_properties(
+            dataframe,
+            states=["Puebla", "Jalisco", "Yucatán"],
+            property_types=["house", "apartment"],
+            area_range=(0.0, 200.0),
+            price_range=(0.0, 50_000.0),
+        )
+
+        self.assertEqual(result.index.tolist(), [0])
+
+    def test_unfiltered_result_is_a_copy(self):
+        result = filter_properties(self.dataframe)
+
+        self.assertEqual(result.index.tolist(), self.dataframe.index.tolist())
+        self.assertIsNot(result, self.dataframe)
+
+    def test_filter_options_and_bounds_ignore_missing_invalid_values(self):
+        dataframe = pd.DataFrame(
+            {
+                "state": ["Puebla", None, "Jalisco", " "],
+                "area_m2": [100.0, None, "invalid", float("inf")],
+            }
+        )
+
+        self.assertEqual(available_category_values(dataframe, "state"), ["Jalisco", "Puebla"])
+        self.assertEqual(numeric_range_bounds(dataframe, "area_m2"), (100.0, 100.0))
+        self.assertIsNone(
+            numeric_range_bounds(pd.DataFrame({"area_m2": ["invalid", None]}), "area_m2")
+        )
+
+    def test_numeric_bounds_keep_valid_extreme_values(self):
+        bounds = numeric_range_bounds(
+            pd.DataFrame(
+                {
+                    "price_usd": [
+                        50_000.0,
+                        100_000.0,
+                        5_000_000.0,
+                        0.0,
+                        -1.0,
+                        float("inf"),
+                    ]
+                }
+            ),
+            "price_usd",
+        )
+
+        self.assertEqual(bounds, (50_000.0, 5_000_000.0))
+
+    def test_invalid_ranges_raise_clear_errors(self):
+        with self.assertRaisesRegex(ValueError, "lower area_m2 bound"):
+            filter_properties(self.dataframe, area_range=(200.0, 100.0))
+
+    def test_filtering_does_not_change_source_dataframe(self):
+        before = self.dataframe.copy(deep=True)
+
+        filter_properties(self.dataframe, states=["Puebla"], price_range=(0.0, 200_000.0))
+
+        pd.testing.assert_frame_equal(self.dataframe, before)
 
 
 if __name__ == "__main__":

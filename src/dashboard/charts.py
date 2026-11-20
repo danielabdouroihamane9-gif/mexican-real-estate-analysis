@@ -85,6 +85,66 @@ def property_size_chart(dataframe: pd.DataFrame) -> go.Figure:
     return figure
 
 
+def area_price_scatter_chart(
+    dataframe: pd.DataFrame,
+    *,
+    log_price_scale: bool = True,
+) -> go.Figure:
+    required_columns = ["area_m2", "price_usd", "property_type", "state"]
+    available_columns = [column for column in required_columns if column in dataframe]
+    points = dataframe.loc[:, available_columns].copy()
+
+    for column in ("area_m2", "price_usd"):
+        if column in points:
+            points[column] = pd.to_numeric(points[column], errors="coerce")
+            points[column] = points[column].replace(
+                [float("inf"), float("-inf")], pd.NA
+            )
+
+    if "area_m2" in points and "price_usd" in points:
+        valid = (
+            points["area_m2"].gt(0)
+            & points["price_usd"].gt(0)
+            & points["area_m2"].notna()
+            & points["price_usd"].notna()
+        )
+        points = points.loc[valid]
+    else:
+        points = points.iloc[0:0]
+
+    figure = px.scatter(
+        points,
+        x="area_m2",
+        y="price_usd",
+        color="property_type" if "property_type" in points else None,
+        hover_data={
+            "area_m2": ":,.1f",
+            "price_usd": ":$,.0f",
+            "property_type": True,
+            "state": True,
+        },
+        render_mode="auto",
+        opacity=0.7,
+        title="Property area versus listing price",
+        labels={
+            "area_m2": "Property area (m²)",
+            "price_usd": "Listing price (USD)",
+            "property_type": "Property type",
+        },
+        template=CHART_TEMPLATE,
+    )
+    figure.update_yaxes(
+        type="log" if log_price_scale else "linear",
+        tickprefix="$",
+        tickformat="~s" if log_price_scale else ",.0f",
+        title_text="Listing price (USD; logarithmic scale)"
+        if log_price_scale
+        else "Listing price (USD)",
+    )
+    figure.update_layout(margin={"l": 8, "r": 16, "t": 56, "b": 8})
+    return figure
+
+
 def state_distribution_chart(
     dataframe: pd.DataFrame,
     *,
