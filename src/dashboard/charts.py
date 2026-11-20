@@ -145,6 +145,122 @@ def area_price_scatter_chart(
     return figure
 
 
+def geographic_map_chart(dataframe: pd.DataFrame) -> go.Figure:
+    center = {
+        "lat": float(dataframe["lat"].median()),
+        "lon": float(dataframe["lon"].median()),
+    }
+    figure = px.scatter_map(
+        dataframe,
+        lat="lat",
+        lon="lon",
+        color="property_type",
+        hover_name="state",
+        hover_data={
+            "lat": False,
+            "lon": False,
+            "property_type": True,
+            "area_m2": ":,.1f",
+            "price_usd": ":$,.0f",
+            "price_per_m2": ":$,.2f",
+        },
+        zoom=3,
+        center=center,
+        map_style="open-street-map",
+        opacity=0.7,
+        size_max=9,
+        title="Available property locations",
+        labels={
+            "property_type": "Property type",
+            "area_m2": "Area (m²)",
+            "price_usd": "Listing price (USD)",
+            "price_per_m2": "Price per m² (USD)",
+        },
+        template=CHART_TEMPLATE,
+    )
+    figure.update_layout(margin={"l": 8, "r": 8, "t": 56, "b": 8})
+    return figure
+
+
+def state_median_chart(
+    dataframe: pd.DataFrame,
+    *,
+    metric: str,
+) -> go.Figure:
+    metric_settings = {
+        "Median listing price (USD)": (
+            "median_price_usd",
+            "Median listing price by state",
+            "$",
+        ),
+        "Median price per m² (USD)": (
+            "median_price_per_m2",
+            "Median price per square meter by state",
+            "$",
+        ),
+    }
+    if metric not in metric_settings:
+        raise ValueError(f"Unsupported state comparison metric: {metric}")
+    value_column, title, prefix = metric_settings[metric]
+    chart_data = dataframe.dropna(subset=[value_column]).sort_values(
+        value_column, ascending=True
+    )
+    figure = go.Figure(
+        go.Bar(
+            x=chart_data[value_column],
+            y=chart_data["state"],
+            orientation="h",
+            marker_color=CHART_COLOR,
+            customdata=chart_data[["listings"]].to_numpy(),
+            hovertemplate=(
+                "%{y}<br>"
+                + metric
+                + ": %{x:$,.0f}<br>Listings: %{customdata[0]:,}<extra></extra>"
+            ),
+            text=chart_data["listings"],
+            textposition="outside",
+        )
+    )
+    figure.update_layout(
+        title=title,
+        xaxis_title=metric,
+        yaxis_title="State",
+        xaxis={"tickprefix": prefix, "tickformat": "~s"},
+        margin={"l": 8, "r": 32, "t": 56, "b": 8},
+        template=CHART_TEMPLATE,
+        showlegend=False,
+    )
+    return figure
+
+
+def nested_model_r_squared_chart(dataframe: pd.DataFrame) -> go.Figure:
+    figure = go.Figure(
+        go.Bar(
+            x=dataframe["model"],
+            y=dataframe["r_squared"],
+            marker_color=CHART_COLOR,
+            customdata=dataframe[["observations", "formula"]].to_numpy(),
+            text=dataframe["r_squared"].map(lambda value: f"{value:.3f}"),
+            textposition="outside",
+            hovertemplate=(
+                "%{x}<br>R²: %{y:.4f}<br>Observations: %{customdata[0]:,}"
+                "<br>Formula: %{customdata[1]}<extra></extra>"
+            ),
+        )
+    )
+    maximum = float(dataframe["r_squared"].max()) if not dataframe.empty else 1.0
+    figure.update_layout(
+        title="Nested-model R² comparison",
+        xaxis_title="Model specification",
+        yaxis_title="R²",
+        yaxis={"range": [0, min(1.0, maximum * 1.2)]},
+        template=CHART_TEMPLATE,
+        margin={"l": 8, "r": 16, "t": 56, "b": 8},
+        showlegend=False,
+    )
+    return figure
+
+
 def state_distribution_chart(
     dataframe: pd.DataFrame,
     *,
