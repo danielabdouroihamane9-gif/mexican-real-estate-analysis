@@ -29,7 +29,12 @@ def calculate_market_metrics(dataframe: pd.DataFrame) -> MarketMetrics:
     """Calculate market KPIs from the analytical dataset."""
 
     state_count = (
-        int(dataframe["state"].nunique(dropna=True))
+        int(
+            dataframe.loc[
+                _nonempty_category_mask(dataframe["state"]),
+                "state",
+            ].nunique()
+        )
         if "state" in dataframe
         else 0
     )
@@ -52,7 +57,8 @@ def aggregate_listing_counts(
         return pd.DataFrame(columns=[category_column, "listings"])
 
     counts = (
-        dataframe.groupby(category_column, dropna=True)
+        dataframe.loc[_nonempty_category_mask(dataframe[category_column])]
+        .groupby(category_column, dropna=True)
         .size()
         .rename("listings")
         .reset_index()
@@ -74,3 +80,10 @@ def aggregate_states(dataframe: pd.DataFrame) -> pd.DataFrame:
     """Count listings by state."""
 
     return aggregate_listing_counts(dataframe, "state")
+
+
+def _nonempty_category_mask(values: pd.Series) -> pd.Series:
+    nonempty = ~values.map(
+        lambda value: isinstance(value, str) and not value.strip()
+    )
+    return values.notna() & nonempty

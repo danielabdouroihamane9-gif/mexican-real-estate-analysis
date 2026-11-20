@@ -1,10 +1,13 @@
+from contextlib import contextmanager
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 from streamlit.testing.v1 import AppTest
 
+import src.dashboard.data_loader as dashboard_data_loader
 from src.dashboard.data_loader import (
     DashboardDataError,
     load_processed_datasets,
@@ -50,6 +53,46 @@ class DashboardDataLoaderTests(unittest.TestCase):
         geospatial = analytical.assign(lat=[19.0], lon=[-98.0])
         return analytical, geospatial
 
+    def _dashboard_frames(self):
+        rows = []
+        states = ["Puebla", "Jalisco", "Yucatán"]
+        property_types = ["house", "apartment"]
+        for index in range(30):
+            area = float(60 + index * 5)
+            price = float(70_000 + index * 12_000 + (index % 3) * 5_000)
+            rows.append(
+                {
+                    "source_dataset": "synthetic.csv",
+                    "property_type": property_types[index % 2],
+                    "state": states[index % 3],
+                    "area_m2": area,
+                    "price_usd": price,
+                    "price_mxn": None,
+                    "conversion_rate_mxn_per_usd": None,
+                    "price_per_m2": price / area,
+                }
+            )
+        analytical = pd.DataFrame(rows)
+        geospatial = analytical.assign(
+            lat=[17.0 + index % 8 for index in range(len(analytical))],
+            lon=[-105.0 + index % 10 for index in range(len(analytical))],
+        )
+        return analytical, geospatial
+
+    @contextmanager
+    def _run_page(self, page_path: Path):
+        analytical, geospatial = self._dashboard_frames()
+        with patch.object(
+            dashboard_data_loader,
+            "load_processed_datasets",
+            return_value=(analytical, geospatial),
+        ):
+            app = AppTest.from_file(
+                str(page_path),
+                default_timeout=60,
+            ).run()
+            yield app, analytical
+
     def test_loads_both_processed_datasets(self):
         analytical, geospatial = self._valid_frames()
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -57,6 +100,29 @@ class DashboardDataLoaderTests(unittest.TestCase):
             loaded_analytical, loaded_geospatial = load_processed_datasets(*paths)
         self.assertEqual(loaded_analytical.shape, (1, 8))
         self.assertEqual(loaded_geospatial.shape, (1, 10))
+
+    def test_default_loader_paths_use_the_processed_data_directory(self):
+        analytical, geospatial = self._valid_frames()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            data_directory = Path(temporary_directory)
+            analytical.to_csv(
+                data_directory / "mexico-real-combined-clean.csv",
+                index=False,
+            )
+            geospatial.to_csv(
+                data_directory / "mexico-real-combined-geospatial.csv",
+                index=False,
+            )
+            with patch.object(
+                dashboard_data_loader,
+                "PROCESSED_DATA_DIR",
+                data_directory,
+            ):
+                load_processed_datasets.clear()
+                loaded = load_processed_datasets()
+                load_processed_datasets.clear()
+
+        self.assertEqual([len(dataset) for dataset in loaded], [1, 1])
 
     def test_missing_file_has_actionable_error(self):
         analytical, geospatial = self._valid_frames()
@@ -86,14 +152,22 @@ class DashboardDataLoaderTests(unittest.TestCase):
             with self.assertRaisesRegex(DashboardDataError, "empty"):
                 load_processed_datasets(analytical_path, geospatial_path)
 
-    def test_real_processed_datasets_have_valid_integrity(self):
-        analytical, geospatial = load_processed_datasets()
-        self.assertFalse(analytical.empty)
-        self.assertFalse(geospatial.empty)
-        self.assertTrue(analytical["area_m2"].gt(0).all())
-        self.assertTrue(analytical["price_usd"].gt(0).all())
-        self.assertTrue(geospatial["lat"].between(-90, 90).all())
-        self.assertTrue(geospatial["lon"].between(-180, 180).all())
+    def test_loaded_processed_datasets_have_valid_integrity(self):
+        analytical, geospatial = self._valid_frames()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            paths = self._write_pair(
+                Path(temporary_directory),
+                analytical,
+                geospatial,
+            )
+            loaded_analytical, loaded_geospatial = load_processed_datasets(*paths)
+
+        self.assertFalse(loaded_analytical.empty)
+        self.assertFalse(loaded_geospatial.empty)
+        self.assertTrue(loaded_analytical["area_m2"].gt(0).all())
+        self.assertTrue(loaded_analytical["price_usd"].gt(0).all())
+        self.assertTrue(loaded_geospatial["lat"].between(-90, 90).all())
+        self.assertTrue(loaded_geospatial["lon"].between(-180, 180).all())
 
     def test_market_metrics_are_calculated_from_input(self):
         dataframe = pd.DataFrame(
@@ -130,6 +204,20 @@ class DashboardDataLoaderTests(unittest.TestCase):
         self.assertEqual(metrics.median_price_usd, 100_000)
         self.assertEqual(metrics.median_area_m2, 100)
         self.assertEqual(metrics.median_price_per_m2, 1_500)
+
+    def test_market_metrics_ignore_blank_state_values(self):
+        metrics = calculate_market_metrics(
+            pd.DataFrame(
+                {
+                    "state": ["Puebla", "", "  ", None, "Jalisco"],
+                    "price_usd": [1, 2, 3, 4, 5],
+                    "area_m2": [1, 2, 3, 4, 5],
+                    "price_per_m2": [1, 1, 1, 1, 1],
+                }
+            )
+        )
+
+        self.assertEqual(metrics.state_count, 2)
 
     def test_market_metrics_handle_empty_datasets(self):
         metrics = calculate_market_metrics(
@@ -184,22 +272,38 @@ class DashboardDataLoaderTests(unittest.TestCase):
         self.assertEqual(list(empty_counts.columns), ["state", "listings"])
         self.assertTrue(empty_counts.empty)
 
-    def test_home_uses_the_processed_dataset_loader(self):
-        analytical, _ = load_processed_datasets()
-        home_page = Path(__file__).resolve().parents[1] / "app" / "Home.py"
-
-        app = AppTest.from_file(str(home_page), default_timeout=30).run()
-
-        self.assertEqual(len(app.exception), 0)
-        displayed_metrics = {metric.label: metric.value for metric in app.metric}
-        self.assertEqual(
-            displayed_metrics["Property records"],
-            f"{len(analytical):,}",
+    def test_category_aggregations_ignore_blank_values(self):
+        property_type_counts = aggregate_property_types(
+            pd.DataFrame(
+                {"property_type": ["house", "", "  ", None, "house"]}
+            )
         )
-        self.assertEqual(len(app.get("plotly_chart")), 4)
+        state_counts = aggregate_states(
+            pd.DataFrame({"state": ["Puebla", "", "  ", None, "Puebla"]})
+        )
+
+        self.assertEqual(
+            property_type_counts.to_dict("records"),
+            [{"property_type": "house", "listings": 2}],
+        )
+        self.assertEqual(
+            state_counts.to_dict("records"),
+            [{"state": "Puebla", "listings": 2}],
+        )
+
+    def test_home_uses_the_processed_dataset_loader(self):
+        home_page = Path(__file__).resolve().parents[1] / "app" / "Home.py"
+        with self._run_page(home_page) as (app, analytical):
+            self.assertEqual(len(app.exception), 0)
+            displayed_metrics = {metric.label: metric.value for metric in app.metric}
+            self.assertEqual(
+                displayed_metrics["Property records"],
+                f"{len(analytical):,}",
+            )
+            self.assertEqual(len(app.get("plotly_chart")), 4)
 
     def test_market_explorer_updates_all_outputs_for_a_state_filter(self):
-        analytical, _ = load_processed_datasets()
+        analytical, _ = self._dashboard_frames()
         state = available_category_values(analytical, "state")[0]
         property_types = available_category_values(analytical, "property_type")
         expected = filter_properties(
@@ -216,15 +320,50 @@ class DashboardDataLoaderTests(unittest.TestCase):
             / "1_Market_Explorer.py"
         )
 
-        app = AppTest.from_file(str(explorer_page), default_timeout=30).run()
-        app.multiselect(key="explorer_states").set_value([state]).run()
+        with self._run_page(explorer_page) as (app, _):
+            app.multiselect(key="explorer_states").set_value([state]).run()
 
-        self.assertEqual(len(app.exception), 0)
-        displayed_metrics = {metric.label: metric.value for metric in app.metric}
-        self.assertEqual(displayed_metrics["Listings"], f"{len(expected):,}")
-        self.assertEqual(len(app.get("plotly_chart")), 3)
-        self.assertEqual(len(app.dataframe), 1)
-        self.assertEqual(len(app.get("download_button")), 1)
+            self.assertEqual(len(app.exception), 0)
+            displayed_metrics = {metric.label: metric.value for metric in app.metric}
+            self.assertEqual(displayed_metrics["Listings"], f"{len(expected):,}")
+            self.assertEqual(len(app.get("plotly_chart")), 3)
+            self.assertEqual(len(app.dataframe), 1)
+            self.assertEqual(len(app.get("download_button")), 1)
+
+    def test_market_explorer_reset_restores_default_filters(self):
+        explorer_page = (
+            Path(__file__).resolve().parents[1]
+            / "app"
+            / "pages"
+            / "1_Market_Explorer.py"
+        )
+        with self._run_page(explorer_page) as (app, analytical):
+            app.multiselect(key="explorer_states").set_value(["Jalisco"]).run()
+            filtered_count = {
+                metric.label: metric.value for metric in app.metric
+            }["Listings"]
+            self.assertNotEqual(filtered_count, f"{len(analytical):,}")
+
+            app.button[0].click().run()
+
+            self.assertEqual(len(app.exception), 0)
+            displayed_metrics = {metric.label: metric.value for metric in app.metric}
+            self.assertEqual(displayed_metrics["Listings"], f"{len(analytical):,}")
+
+    def test_geographic_price_and_methodology_pages_render(self):
+        pages_directory = Path(__file__).resolve().parents[1] / "app" / "pages"
+        for filename in (
+            "2_Geographic_Analysis.py",
+            "3_Price_Drivers.py",
+            "4_Methodology.py",
+        ):
+            with self.subTest(page=filename):
+                with self._run_page(pages_directory / filename) as (app, _):
+                    self.assertEqual(
+                        len(app.exception),
+                        0,
+                        [exception.message for exception in app.exception],
+                    )
 
 
 class DashboardFilteringTests(unittest.TestCase):
