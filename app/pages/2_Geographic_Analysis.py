@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from src.dashboard.charts import geographic_map_chart, state_median_chart
-from src.dashboard.data_loader import DashboardDataError, load_processed_datasets
+from src.dashboard.data_upload import load_dashboard_datasets
 from src.dashboard.filtering import (
     available_category_values,
     filter_properties,
@@ -54,11 +54,10 @@ st.markdown(
     "and compare descriptive market statistics across states."
 )
 
-try:
-    analytical, geospatial = load_processed_datasets()
-except DashboardDataError as exc:
-    st.error(str(exc))
+datasets = load_dashboard_datasets()
+if datasets is None:
     st.stop()
+analytical, geospatial = datasets
 
 state_options = available_category_values(geospatial, "state")
 property_type_options = available_category_values(geospatial, "property_type")

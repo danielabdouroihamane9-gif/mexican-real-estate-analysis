@@ -8,7 +8,7 @@ from src.dashboard.charts import (
     property_type_chart,
     state_distribution_chart,
 )
-from src.dashboard.data_loader import DashboardDataError, load_processed_datasets
+from src.dashboard.data_upload import load_dashboard_datasets
 from src.dashboard.metrics import calculate_market_metrics
 from src.dashboard.styles import apply_dashboard_style
 
@@ -38,11 +38,10 @@ with st.container(border=True):
         "state-level differences in the available listing data."
     )
 
-try:
-    analytical, _ = load_processed_datasets()
-except DashboardDataError as exc:
-    st.error(str(exc))
+datasets = load_dashboard_datasets()
+if datasets is None:
     st.stop()
+analytical, _ = datasets
 
 metrics = calculate_market_metrics(analytical)
 
@@ -125,6 +124,10 @@ with st.container(border=True):
         "These are comparisons within this dataset and model specification; "
         "they do not establish causation. State is a coarse geographical "
         "measure, not a complete representation of location."
+    )
+    st.caption(
+        "These fixed figures are the existing reference results for the original "
+        "2,082-record dataset. Price Drivers recalculates the analysis for uploaded data."
     )
 
 st.header("Methodological note")

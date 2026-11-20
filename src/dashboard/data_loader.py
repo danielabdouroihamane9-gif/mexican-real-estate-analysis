@@ -1,11 +1,17 @@
-"""Loading and validation for the dashboard's processed datasets."""
+"""Load, validate, and prepare the dashboard's source and processed datasets."""
 
+from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from src.real_estate_analysis import PROCESSED_DATA_DIR
+from src.real_estate_analysis import (
+    PROCESSED_DATA_DIR,
+    SOURCE_FILENAMES,
+    UNRESOLVED_MXN_TO_USD_RATE,
+    build_processed_datasets_from_frames,
+)
 
 
 ANALYTICAL_FILENAME = "mexico-real-combined-clean.csv"
@@ -35,10 +41,23 @@ NUMERIC_COLUMNS = frozenset(
         "lon",
     }
 )
+SOURCE_REQUIRED_COLUMNS = (
+    frozenset({"property_type", "state", "lat", "lon", "area_m2", "price_usd"}),
+    frozenset({"property_type", "state", "lat", "lon", "area_m2", "price_mxn"}),
+    frozenset(
+        {
+            "property_type",
+            "place_with_parent_names",
+            "lat-lon",
+            "area_m2",
+            "price_usd",
+        }
+    ),
+)
 
 
 class DashboardDataError(ValueError):
-    """Raised when a processed dashboard dataset cannot be used safely."""
+    """Raised when dashboard source data cannot be used safely."""
 
 
 def _validate_dataset(path: Path, required_columns: frozenset[str]) -> pd.DataFrame:
@@ -99,4 +118,73 @@ def load_processed_datasets(
         _validate_dataset(analytical, ANALYTICAL_COLUMNS),
         _validate_dataset(geospatial, GEOSPATIAL_COLUMNS),
     )
+
+
+def load_uploaded_datasets(
+    source_contents: tuple[bytes, ...],
+    mxn_rate: float = UNRESOLVED_MXN_TO_USD_RATE,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Validate and process the three uploaded raw source CSVs in memory."""
+
+    if len(source_contents) != len(SOURCE_FILENAMES):
+        raise DashboardDataError(
+            f"Upload exactly these {len(SOURCE_FILENAMES)} source CSV files: "
+            f"{', '.join(SOURCE_FILENAMES)}."
+        )
+
+    source_frames: list[pd.DataFrame] = []
+    for filename, required_columns, contents in zip(
+        SOURCE_FILENAMES,
+        SOURCE_REQUIRED_COLUMNS,
+        source_contents,
+        strict=True,
+    ):
+        if not contents:
+            raise DashboardDataError(
+                f"{filename} is empty. Upload the original CSV with its header "
+                "and data rows."
+            )
+        try:
+            dataframe = pd.read_csv(BytesIO(contents), encoding="utf-8-sig")
+        except (
+            OSError,
+            UnicodeDecodeError,
+            pd.errors.EmptyDataError,
+            pd.errors.ParserError,
+        ) as exc:
+            raise DashboardDataError(
+                f"Could not read {filename} as a CSV file: {exc}. "
+                "Check the file encoding and upload the original CSV."
+            ) from exc
+
+        missing_columns = sorted(required_columns.difference(dataframe.columns))
+        if missing_columns:
+            raise DashboardDataError(
+                f"{filename} is missing required columns: "
+                f"{', '.join(missing_columns)}. Upload the matching source CSV, "
+                "not a processed output."
+            )
+        if dataframe.empty:
+            raise DashboardDataError(
+                f"{filename} has a header but no data rows. Upload a non-empty "
+                "source CSV."
+            )
+        source_frames.append(dataframe)
+
+    try:
+        analytical, geospatial = build_processed_datasets_from_frames(
+            source_frames,
+            mxn_rate=mxn_rate,
+        )
+    except ValueError as exc:
+        raise DashboardDataError(f"Could not process the uploaded CSVs: {exc}") from exc
+
+    if analytical.empty:
+        raise DashboardDataError(
+            "The uploaded CSVs contained no usable property listings. Check that "
+            "property type and state are present and that area and USD price are "
+            "valid and positive."
+        )
+
+    return analytical, geospatial
 
