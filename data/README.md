@@ -13,11 +13,43 @@
 The pipeline uses these Mexico-named files only. It does not read other raw CSVs
 that may be present in a local `data/raw/` directory.
 
-The repository does not establish the original publishers, collection dates,
-collection methods, or redistribution permissions for these files. The
-filenames and column contents describe the inputs used by the code, not verified
-source attribution. Confirm provenance and terms before publishing or sharing
-raw or derived data.
+WQU provides these course datasets, but the project does not independently
+verify the original listing publishers, collection dates, or collection
+methods. Filenames and column contents describe what the code expects, not
+verified source attribution. Check the applicable terms before processing or
+sharing raw or derived data.
+
+## Getting data into the dashboard
+
+The three Mexico CSVs listed above are the only source files required. Obtain
+them from an authorized WQU course-data source or other authorized source; no
+WQU-provided dataset files are bundled in this repository. Do not commit or
+redistribute course materials. Confirm that using the files with a remote
+Streamlit Community Cloud app is allowed before uploading them there.
+
+On any dashboard page, use the **Dashboard data** sidebar controls to upload
+one CSV into each matching source slot. The required columns are:
+
+| File | Required columns |
+| --- | --- |
+| `mexico-real-estate-1.csv` | `property_type`, `state`, `lat`, `lon`, `area_m2`, `price_usd` |
+| `mexico-real-estate-2.csv` | `property_type`, `state`, `lat`, `lon`, `area_m2`, `price_mxn` |
+| `mexico-real-estate-3.csv` | `property_type`, `place_with_parent_names`, `lat-lon`, `area_m2`, `price_usd` |
+
+The dashboard checks each CSV and then calls the existing cleaning pipeline to
+build the analytical and geospatial dataframes in memory. Users do not upload
+processed files: coordinates in the source files are parsed by the pipeline to
+derive the geographic dataset. Uploaded files and resulting dataframes are kept
+in the current Streamlit session and are not written to this repository or to
+`data/processed/`. All data-dependent pages use that same session dataset.
+When no source files have been uploaded, a local development copy may use the
+processed files described below if they exist.
+
+Missing files, unreadable CSVs, and missing required columns are reported in
+the sidebar with instructions for correction. Rows with invalid core listing
+values continue through the existing pipeline's coercion and filtering rules;
+rows with invalid or missing coordinates remain in the analytical output when
+otherwise valid, but are omitted from the geospatial output.
 
 ## Standardized outputs
 
@@ -30,6 +62,9 @@ The pipeline writes these files into `data/processed/`:
   `lat` and `lon`, limited to records with valid coordinate bounds.
 - `cleaning_audit.json`: source-level row counts, duplicate diagnostics,
   potential cross-source matches, conversion assumption, and output counts.
+
+These files are written only when the local command below is run. They are
+optional for the interactive upload workflow and remain excluded from Git.
 
 `price_per_m2` is calculated as `price_usd / area_m2`; it is not an independent
 input field.
@@ -46,9 +81,9 @@ The default configurable value is `19.0` MXN per USD. The code and audit mark
 this assumption as not historically verified. Changing `mxn_rate` changes
 Dataset 2's USD price values; it does not affect the other two sources.
 
-## Current audit
+## Reference audit
 
-The audit generated from the current local inputs reports:
+The audit generated from the original local reference inputs reports:
 
 | Input | Raw rows | Raw exact-duplicate rows | Repeated standardized keys removed within source | Analytical rows |
 | --- | ---: | ---: | ---: | ---: |
@@ -82,15 +117,15 @@ price does not prove that records refer to the same physical property.
 
 ## Rebuild outputs
 
-From the repository root, provide the three input files at the expected paths
-and run:
+For optional local preprocessing, provide the three input files at the expected
+paths and run from the repository root:
 
 ```powershell
 python -m src.real_estate_analysis
 ```
 
 The files under `data/raw/` and `data/processed/` are excluded by the root
-`.gitignore` and are not tracked in the repository. Consequently, a fresh clone
-needs authorized data supplied locally before it can regenerate the outputs or
-launch the dashboard. Verify redistribution rights before including any data
-files in a public deployment repository.
+`.gitignore` and are not tracked in the repository. A fresh clone can run the
+dashboard by uploading authorized source CSVs; local preprocessing additionally
+requires placing those files under `data/raw/`. Do not add WQU course datasets
+or generated outputs to a public deployment repository.

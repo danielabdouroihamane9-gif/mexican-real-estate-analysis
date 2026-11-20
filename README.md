@@ -27,8 +27,9 @@ a coarse proxy for location.
 
 ## Verified findings
 
-The figures below were reproduced from the current processed analytical
-dataset using the project's analysis functions:
+The figures below were reproduced from the original 2,082-record reference
+dataset using the project's analysis functions. They are fixed reference
+results; uploaded sources are analyzed dynamically on the Price Drivers page.
 
 - The area-price sample contains **2,082 listings**. Pearson correlation is
   **0.5935** and Spearman correlation is **0.6117**.
@@ -68,11 +69,12 @@ captures at these paths and link them here:
 ## Dashboard features
 
 - **Home — Market Overview:** dynamic market metrics, listing distributions,
-  state counts, the verified nested-model finding, and a methodological note.
+  state counts, the reference nested-model finding, and a methodological note.
 - **Market Explorer:** state, property-type, area, and price filters. Metrics,
   charts, the table, and CSV export use the same filtered records.
 - **Geographic Analysis:** filters over the processed coordinate dataset,
-  mapped listings, and state-level medians with listing counts.
+  derived from uploaded source coordinates, mapped listings, and state-level
+  medians with listing counts.
 - **Price Drivers:** Pearson and Spearman correlation, the HC3 regression,
   nested-model comparisons, and explicit observational caveats.
 - **Methodology:** data preparation, variable definitions, statistical methods,
@@ -80,7 +82,8 @@ captures at these paths and link them here:
 
 ## Dataset overview
 
-The cleaning pipeline reads these three inputs:
+The app accepts these three source CSV inputs. The local cleaning command reads
+the same files from `data/raw/`:
 
 | Input file | Contribution |
 | --- | --- |
@@ -88,10 +91,18 @@ The cleaning pipeline reads these three inputs:
 | `mexico-real-estate-2.csv` | MXN listing price, property type, state, area, latitude, longitude |
 | `mexico-real-estate-3.csv` | USD listing price and area; state and coordinates are parsed from location fields |
 
-The current audit records 700 raw rows per file, 2,082 analytical rows after
-within-source cleaning, and 1,734 rows in the geospatial output. Dataset 2 prices
-are converted using the configurable assumption of **19 MXN/USD**. The project
-does not independently verify the historical validity of this rate.
+The upload controls expect these exact source columns:
+
+| File | Required columns |
+| --- | --- |
+| `mexico-real-estate-1.csv` | `property_type`, `state`, `lat`, `lon`, `area_m2`, `price_usd` |
+| `mexico-real-estate-2.csv` | `property_type`, `state`, `lat`, `lon`, `area_m2`, `price_mxn` |
+| `mexico-real-estate-3.csv` | `property_type`, `place_with_parent_names`, `lat-lon`, `area_m2`, `price_usd` |
+
+The reference audit records 700 raw rows per file, 2,082 analytical rows after
+within-source cleaning, and 1,734 rows in the geospatial output. Dataset 2
+prices are converted using the configurable assumption of **19 MXN/USD**. The
+project does not independently verify the historical validity of this rate.
 
 The analytical output contains `source_dataset`, `property_type`, `state`,
 `area_m2`, `price_usd`, `price_mxn`, `conversion_rate_mxn_per_usd`, and
@@ -99,17 +110,23 @@ The analytical output contains `source_dataset`, `property_type`, `state`,
 `price_per_m2` is calculated as `price_usd / area_m2`.
 
 The files under `data/raw/` and `data/processed/` are excluded by
-[`.gitignore`](.gitignore) and are not present in the tracked repository. Local
-reproduction and deployment therefore require authorized copies of the input
-or processed data at the expected paths. The dashboard specifically requires:
+[`.gitignore`](.gitignore) and are not included in the repository. Obtain the
+three source CSVs through an authorized WQU course-data source or other
+authorized source; the repository does not redistribute WQU course materials.
+WQU provides these course datasets; the project has not independently
+established the original listing publishers, collection dates, collection
+methods, or all applicable use permissions. Confirm that your use is permitted
+before uploading or sharing the files.
 
-- `data/processed/mexico-real-combined-clean.csv`
-- `data/processed/mexico-real-combined-geospatial.csv`
-
-The repository does not establish original publishers, collection dates,
-collection methods, or redistribution permissions for the input files. Confirm
-provenance and terms before publishing or sharing any data. See
-[`data/README.md`](data/README.md) for the cleaning audit and schema notes.
+To use the dashboard, open the shared **Dashboard data** section in the sidebar
+on any page and upload each matching source CSV. The app validates the required
+columns, applies the existing cleaning pipeline in memory, and derives the
+geospatial dataset from the source coordinates; users do not upload processed
+files. All analysis pages use the same uploaded data for the current Streamlit
+session. Uploads and derived data are not written to the repository or to
+`data/processed/`. On a local development copy, existing processed files may be
+used as a fallback when no source files have been uploaded. For provenance,
+terms, and the reference cleaning audit, see [`data/README.md`](data/README.md).
 
 ## Methodology summary
 
@@ -207,8 +224,8 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-To regenerate processed data, place the three authorized Mexican input CSVs in
-`data/raw/` and run:
+To optionally regenerate local processed files for development, place the
+three authorized Mexican input CSVs in `data/raw/` and run:
 
 ```powershell
 python -m src.real_estate_analysis
@@ -216,7 +233,7 @@ python -m src.real_estate_analysis
 
 This command writes the processed CSVs and `cleaning_audit.json` under
 `data/processed/`. It cannot run from a clone until the ignored raw files have
-been supplied.
+been supplied. The dashboard upload workflow does not require this step.
 
 ## Running the dashboard
 
@@ -232,8 +249,9 @@ Or, after activating the environment:
 python -m streamlit run app/Home.py
 ```
 
-The app reports an actionable data-loading error if its required processed CSVs
-are absent.
+If source CSVs have not been uploaded and local processed files are unavailable,
+the sidebar explains which source files are required. Missing uploads, unreadable
+CSV files, or missing schema columns produce actionable messages.
 
 ## Running tests
 
@@ -246,20 +264,20 @@ source CSVs:
 
 ## Streamlit Community Cloud preparation
 
-**The repository is not currently deployable as-is:** the two processed CSVs
-required by the dashboard are local and git-ignored. Before deployment, confirm
-that sharing the derived data is permitted, then make both files available in
-the GitHub repository under the paths listed above. Do not publish the raw
-inputs unless their terms explicitly permit redistribution. If the processed
-files cannot be included, the app needs an approved data-hosting approach and
-corresponding loader changes before it can run in Cloud.
+The application can be deployed without bundling or hosting the WQU source or
+processed datasets. Users must upload the three required source CSVs through
+the app's sidebar for each Streamlit session. The files are sent to the app
+server for in-memory processing and are not saved by the upload workflow.
+Confirm that this remote processing is permitted by the applicable WQU terms
+before publicly sharing the app; do not upload course files to the repository
+or another public file host.
 
 No secrets or external system packages are required. No custom
-`.streamlit/config.toml` is currently needed. After the data-access question is
-resolved:
+`.streamlit/config.toml` is currently needed.
 
-1. Push the application source, `requirements.txt`, and the authorized
-   processed files to the target GitHub repository and branch.
+1. Push only the application source and `requirements.txt` to the target
+   GitHub repository and branch. Verify no raw or processed datasets are
+   tracked.
 2. Sign in at [Streamlit Community Cloud](https://share.streamlit.io/) and
    choose **Create app**.
 3. Select the repository and branch containing the deployment-ready version.
@@ -270,8 +288,8 @@ resolved:
 6. Review the build logs and open each page after startup.
 
 For dependency failures, compare Cloud build logs with `requirements.txt` and
-the selected Python version. For missing-data errors, verify that both
-processed CSV files are committed at the expected repository-relative paths.
+the selected Python version. For data errors, check each uploaded source file
+against the required columns in the Dataset overview.
 Streamlit's current instructions are in the
 [Community Cloud deployment guide](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/deploy).
 

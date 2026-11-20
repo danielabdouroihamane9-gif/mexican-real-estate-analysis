@@ -1,8 +1,10 @@
 """Reusable cleaning helpers for the Mexican real estate analysis."""
 
+import json
 from pathlib import Path
 import re
 import unicodedata
+from collections.abc import Sequence
 
 import pandas as pd
 
@@ -15,6 +17,22 @@ PROCESSED_DATA_DIR = PROJECT_ROOT / "data" / "processed"
 # conversion assumption. It is kept explicit and is not presented as historical
 # market exchange-rate data.
 UNRESOLVED_MXN_TO_USD_RATE = 19.0
+SOURCE_FILENAMES = (
+    "mexico-real-estate-1.csv",
+    "mexico-real-estate-2.csv",
+    "mexico-real-estate-3.csv",
+)
+
+
+def _validate_mxn_rate(mxn_rate: float) -> None:
+    if mxn_rate is None or mxn_rate <= 0:
+        raise ValueError("MXN per USD conversion rate must be positive")
+
+
+def _read_source(source: Path | pd.DataFrame) -> pd.DataFrame:
+    if isinstance(source, pd.DataFrame):
+        return source.copy()
+    return pd.read_csv(source, encoding="utf-8")
 
 
 def parse_usd_price(value: object) -> float:
@@ -103,8 +121,8 @@ def _standardized_core(df: pd.DataFrame, source_dataset: str) -> pd.DataFrame:
     return result
 
 
-def clean_dataset_1(path: Path, mxn_rate: float = UNRESOLVED_MXN_TO_USD_RATE) -> tuple[pd.DataFrame, pd.DataFrame]:
-    df = pd.read_csv(path, encoding="utf-8")
+def clean_dataset_1(path: Path | pd.DataFrame, mxn_rate: float = UNRESOLVED_MXN_TO_USD_RATE) -> tuple[pd.DataFrame, pd.DataFrame]:
+    df = _read_source(path)
     df["price_usd"] = pd.to_numeric(df["price_usd"].map(parse_usd_price), errors="coerce")
     df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
     df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
@@ -115,8 +133,8 @@ def clean_dataset_1(path: Path, mxn_rate: float = UNRESOLVED_MXN_TO_USD_RATE) ->
     return analytical_dataframe(df), geospatial_dataframe(df)
 
 
-def clean_dataset_2(path: Path, mxn_rate: float = UNRESOLVED_MXN_TO_USD_RATE) -> tuple[pd.DataFrame, pd.DataFrame]:
-    df = pd.read_csv(path, encoding="utf-8")
+def clean_dataset_2(path: Path | pd.DataFrame, mxn_rate: float = UNRESOLVED_MXN_TO_USD_RATE) -> tuple[pd.DataFrame, pd.DataFrame]:
+    df = _read_source(path)
     df["price_mxn"] = pd.to_numeric(df["price_mxn"], errors="coerce")
     df["price_usd"] = df["price_mxn"] / mxn_rate
     df["conversion_rate_mxn_per_usd"] = mxn_rate
@@ -127,8 +145,8 @@ def clean_dataset_2(path: Path, mxn_rate: float = UNRESOLVED_MXN_TO_USD_RATE) ->
     return analytical_dataframe(df), geospatial_dataframe(df)
 
 
-def clean_dataset_3(path: Path, mxn_rate: float = UNRESOLVED_MXN_TO_USD_RATE) -> tuple[pd.DataFrame, pd.DataFrame]:
-    df = pd.read_csv(path, encoding="utf-8")
+def clean_dataset_3(path: Path | pd.DataFrame, mxn_rate: float = UNRESOLVED_MXN_TO_USD_RATE) -> tuple[pd.DataFrame, pd.DataFrame]:
+    df = _read_source(path)
     df["state"] = df["place_with_parent_names"].map(state_from_place)
     coordinates = df["lat-lon"].map(parse_lat_lon)
     df["lat"] = coordinates.map(lambda pair: pair[0])
@@ -193,46 +211,51 @@ def geospatial_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def build_processed_datasets(
-    mxn_rate: float = UNRESOLVED_MXN_TO_USD_RATE,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    if mxn_rate is None or mxn_rate <= 0:
-        raise ValueError("MXN per USD conversion rate must be positive")
+def _build_datasets_from_frames(
+    source_frames: Sequence[pd.DataFrame],
+    mxn_rate: float,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    _validate_mxn_rate(mxn_rate)
+    if len(source_frames) != len(SOURCE_FILENAMES):
+        raise ValueError(
+            f"Exactly {len(SOURCE_FILENAMES)} source datasets are required"
+        )
 
     clean_parts = []
     geo_parts = []
     audit_sources = []
     cleaners = (clean_dataset_1, clean_dataset_2, clean_dataset_3)
     standardized_parts = []
-    for index, cleaner in enumerate(cleaners, start=1):
-        path = RAW_DATA_DIR / f"mexico-real-estate-{index}.csv"
-        raw = pd.read_csv(path, encoding="utf-8")
-        clean, geo = cleaner(path, mxn_rate=mxn_rate)
+    for index, (filename, raw, cleaner) in enumerate(
+        zip(SOURCE_FILENAMES, source_frames, cleaners, strict=True),
+        start=1,
+    ):
+        clean, geo = cleaner(raw, mxn_rate=mxn_rate)
         clean_parts.append(clean)
         geo_parts.append(geo)
 
         exact_raw_duplicates = int(raw.duplicated().sum())
         if index == 1:
-            standardized = pd.read_csv(path, encoding="utf-8")
+            standardized = raw.copy()
             standardized["property_type"] = standardized["property_type"].map(normalize_text)
             standardized["state"] = standardized["state"].map(normalize_text)
             standardized["area_m2"] = pd.to_numeric(standardized["area_m2"], errors="coerce")
             standardized["price_usd"] = standardized["price_usd"].map(parse_usd_price)
         elif index == 2:
-            standardized = pd.read_csv(path, encoding="utf-8")
+            standardized = raw.copy()
             standardized["property_type"] = standardized["property_type"].map(normalize_text)
             standardized["state"] = standardized["state"].map(normalize_text)
             standardized["area_m2"] = pd.to_numeric(standardized["area_m2"], errors="coerce")
             standardized["price_mxn"] = pd.to_numeric(standardized["price_mxn"], errors="coerce")
             standardized["price_usd"] = standardized["price_mxn"] / mxn_rate
         else:
-            standardized = pd.read_csv(path, encoding="utf-8")
+            standardized = raw.copy()
             standardized["property_type"] = standardized["property_type"].map(normalize_text)
             standardized["state"] = standardized["place_with_parent_names"].map(state_from_place)
             standardized["area_m2"] = pd.to_numeric(standardized["area_m2"], errors="coerce")
             standardized["price_usd"] = standardized["price_usd"].map(parse_usd_price)
 
-        standardized["source_dataset"] = path.name
+        standardized["source_dataset"] = filename
         standardized_parts.append(standardized)
         key_columns = ["property_type", "state", "area_m2", "price_usd"]
         valid_mask = (
@@ -242,7 +265,7 @@ def build_processed_datasets(
             & standardized["price_usd"].gt(0)
         )
         audit_sources.append({
-            "source_dataset": path.name,
+            "source_dataset": filename,
             "raw_row_count": int(len(raw)),
             "raw_exact_duplicate_rows": exact_raw_duplicates,
             "invalid_or_missing_core_rows": int((~valid_mask).sum()),
@@ -260,12 +283,6 @@ def build_processed_datasets(
     key_columns = ["property_type", "state", "area_m2", "price_usd"]
     overlap_summary = find_cross_source_overlaps(cross_source)
 
-    PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    clean.to_csv(PROCESSED_DATA_DIR / "mexico-real-combined-clean.csv", index=False)
-    geospatial.to_csv(
-        PROCESSED_DATA_DIR / "mexico-real-combined-geospatial.csv",
-        index=False,
-    )
     audit = {
         "currency_assumption": {
             "mxn_per_usd": mxn_rate,
@@ -286,7 +303,36 @@ def build_processed_datasets(
             "geospatial_rows": int(geospatial.shape[0]),
         },
     }
-    import json
+    return clean, geospatial, audit
+
+
+def build_processed_datasets_from_frames(
+    source_frames: Sequence[pd.DataFrame],
+    mxn_rate: float = UNRESOLVED_MXN_TO_USD_RATE,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Build analytical and geospatial dataframes without writing source data."""
+
+    clean, geospatial, _ = _build_datasets_from_frames(source_frames, mxn_rate)
+    return clean, geospatial
+
+
+def build_processed_datasets(
+    mxn_rate: float = UNRESOLVED_MXN_TO_USD_RATE,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Build and write processed datasets from the repository's raw CSV files."""
+
+    _validate_mxn_rate(mxn_rate)
+    source_frames = [
+        pd.read_csv(RAW_DATA_DIR / filename, encoding="utf-8")
+        for filename in SOURCE_FILENAMES
+    ]
+    clean, geospatial, audit = _build_datasets_from_frames(source_frames, mxn_rate)
+    PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    clean.to_csv(PROCESSED_DATA_DIR / "mexico-real-combined-clean.csv", index=False)
+    geospatial.to_csv(
+        PROCESSED_DATA_DIR / "mexico-real-combined-geospatial.csv",
+        index=False,
+    )
     with open(PROCESSED_DATA_DIR / "cleaning_audit.json", "w", encoding="utf-8") as handle:
         json.dump(audit, handle, ensure_ascii=False, indent=2)
     return clean, geospatial

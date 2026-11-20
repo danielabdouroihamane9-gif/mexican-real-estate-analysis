@@ -7,7 +7,7 @@ from src.dashboard.charts import (
     area_price_scatter_chart,
     nested_model_r_squared_chart,
 )
-from src.dashboard.data_loader import DashboardDataError, load_processed_datasets
+from src.dashboard.data_upload import load_dashboard_datasets
 from src.dashboard.price_analysis import (
     MAIN_MODEL_FORMULA,
     PriceDriverAnalysis,
@@ -37,11 +37,10 @@ st.caption(
     "comparisons. It does not estimate causal effects."
 )
 
-try:
-    analytical, _ = load_processed_datasets()
-except DashboardDataError as exc:
-    st.error(str(exc))
+datasets = load_dashboard_datasets()
+if datasets is None:
     st.stop()
+analytical, _ = datasets
 
 
 @st.cache_data(show_spinner=False)

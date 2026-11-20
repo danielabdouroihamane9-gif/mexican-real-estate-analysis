@@ -9,6 +9,8 @@ import pandas as pd
 import src.real_estate_analysis as analysis
 from src.real_estate_analysis import (
     build_processed_datasets,
+    build_processed_datasets_from_frames,
+    SOURCE_FILENAMES,
     UNRESOLVED_MXN_TO_USD_RATE,
     normalize_text,
     find_cross_source_overlaps,
@@ -159,6 +161,28 @@ class CleaningHelperTests(unittest.TestCase):
         self.assertEqual(geospatial.duplicated().sum(), 0)
         geo_core = ["source_dataset","property_type","state","lat","lon","area_m2","price_usd","price_per_m2"]
         self.assertFalse(geospatial[geo_core].isna().any().any())
+
+    def test_in_memory_pipeline_matches_file_outputs_without_writing(self):
+        expected_analytical, expected_geospatial = build_processed_datasets()
+        source_frames = [
+            pd.read_csv(self.raw_directory / filename, encoding="utf-8")
+            for filename in SOURCE_FILENAMES
+        ]
+        unused_output_directory = (
+            Path(self.temporary_directory.name) / "not-created"
+        )
+        with patch.object(
+            analysis,
+            "PROCESSED_DATA_DIR",
+            unused_output_directory,
+        ):
+            analytical, geospatial = build_processed_datasets_from_frames(
+                source_frames
+            )
+
+        pd.testing.assert_frame_equal(analytical, expected_analytical)
+        pd.testing.assert_frame_equal(geospatial, expected_geospatial)
+        self.assertFalse(unused_output_directory.exists())
 
     def test_mxn_provenance_and_conversion(self):
         combined, _ = build_processed_datasets()

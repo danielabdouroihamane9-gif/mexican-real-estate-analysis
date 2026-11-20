@@ -3,6 +3,7 @@
 import pandas as pd
 import streamlit as st
 
+from src.dashboard.data_upload import load_dashboard_datasets
 from src.dashboard.styles import apply_dashboard_style
 
 
@@ -12,6 +13,11 @@ st.set_page_config(
     layout="wide",
 )
 apply_dashboard_style()
+if load_dashboard_datasets() is None:
+    st.caption(
+        "Upload the three source CSVs using the sidebar controls to enable "
+        "data-dependent pages."
+    )
 
 st.title("Methodology")
 st.markdown(
@@ -19,9 +25,12 @@ st.markdown(
     "the dashboard's descriptive and statistical results are calculated."
 )
 st.info(
-    "The analysis is observational. It describes patterns in the available "
-    "listing records and does not establish cause and effect.",
-    title="Scope",
+    "Data-dependent pages use the source files currently uploaded in the "
+    "sidebar. Fixed counts and model statistics on this page describe the "
+    "original 2,082-record reference dataset; they are not recalculated for "
+    "replacement uploads. The analysis is observational and does not establish "
+    "cause and effect.",
+    title="Scope and reference results",
 )
 
 st.header("Research question")

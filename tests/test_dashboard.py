@@ -10,8 +10,10 @@ from streamlit.testing.v1 import AppTest
 import src.dashboard.data_loader as dashboard_data_loader
 from src.dashboard.data_loader import (
     DashboardDataError,
+    load_uploaded_datasets,
     load_processed_datasets,
 )
+from src.real_estate_analysis import SOURCE_FILENAMES
 from src.dashboard.filtering import (
     available_category_values,
     filter_properties,
@@ -79,6 +81,57 @@ class DashboardDataLoaderTests(unittest.TestCase):
         )
         return analytical, geospatial
 
+    def _upload_source_frames(self, row_count=30):
+        source_frames = []
+        states = ["Puebla", "Jalisco", "Yucatán", "Sonora"]
+        property_types = ["house", "apartment"]
+        for source_index in range(3):
+            rows = []
+            for index in range(row_count):
+                state = states[index % len(states)]
+                area = float(40 + index * 3 + source_index)
+                price = float(80_000 + index * 9_000 + source_index * 1_000)
+                latitude = 18.0 + index % 8
+                longitude = -110.0 + index % 10
+                common = {
+                    "property_type": property_types[
+                        (index // len(states)) % len(property_types)
+                    ],
+                    "area_m2": area,
+                }
+                if source_index == 0:
+                    row = {
+                        **common,
+                        "state": state,
+                        "lat": latitude,
+                        "lon": longitude,
+                        "price_usd": f"${price:,.0f}",
+                    }
+                elif source_index == 1:
+                    row = {
+                        **common,
+                        "state": state,
+                        "lat": latitude,
+                        "lon": longitude,
+                        "price_mxn": price * 19,
+                    }
+                else:
+                    row = {
+                        **common,
+                        "place_with_parent_names": f"|México|{state}|Ciudad|",
+                        "lat-lon": f"{latitude},{longitude}",
+                        "price_usd": f"${price:,.0f}",
+                    }
+                rows.append(row)
+            source_frames.append(pd.DataFrame(rows))
+        return source_frames
+
+    def _upload_source_contents(self):
+        return tuple(
+            dataframe.to_csv(index=False).encode("utf-8")
+            for dataframe in self._upload_source_frames()
+        )
+
     @contextmanager
     def _run_page(self, page_path: Path):
         analytical, geospatial = self._dashboard_frames()
@@ -100,6 +153,75 @@ class DashboardDataLoaderTests(unittest.TestCase):
             loaded_analytical, loaded_geospatial = load_processed_datasets(*paths)
         self.assertEqual(loaded_analytical.shape, (1, 8))
         self.assertEqual(loaded_geospatial.shape, (1, 10))
+
+    def test_uploaded_sources_are_validated_and_processed_in_memory(self):
+        analytical, geospatial = load_uploaded_datasets(
+            self._upload_source_contents()
+        )
+
+        self.assertEqual(len(analytical), 90)
+        self.assertEqual(len(geospatial), 90)
+        self.assertEqual(set(analytical["source_dataset"]), set(SOURCE_FILENAMES))
+        self.assertTrue(analytical["price_usd"].gt(0).all())
+        self.assertTrue(geospatial["lat"].between(-90, 90).all())
+        self.assertTrue(geospatial["lon"].between(-180, 180).all())
+
+    def test_uploaded_sources_require_all_three_csvs(self):
+        with self.assertRaisesRegex(DashboardDataError, "exactly these 3"):
+            load_uploaded_datasets(self._upload_source_contents()[:2])
+
+    def test_uploaded_source_schema_errors_name_missing_columns(self):
+        source_frames = self._upload_source_frames()
+        del source_frames[1]["price_mxn"]
+        contents = tuple(
+            dataframe.to_csv(index=False).encode("utf-8")
+            for dataframe in source_frames
+        )
+
+        with self.assertRaisesRegex(
+            DashboardDataError,
+            "mexico-real-estate-2.csv is missing required columns: price_mxn",
+        ):
+            load_uploaded_datasets(contents)
+
+    def test_uploaded_source_rejects_invalid_csv_bytes_and_empty_files(self):
+        contents = list(self._upload_source_contents())
+        contents[0] = b"\xff\xfe"
+        with self.assertRaisesRegex(DashboardDataError, "Could not read mexico-real-estate-1.csv"):
+            load_uploaded_datasets(tuple(contents))
+
+        contents[0] = b""
+        with self.assertRaisesRegex(DashboardDataError, "mexico-real-estate-1.csv is empty"):
+            load_uploaded_datasets(tuple(contents))
+
+    def test_uploaded_source_handles_invalid_rows_and_missing_coordinates(self):
+        source_frames = self._upload_source_frames(row_count=3)
+        source_frames[0]["area_m2"] = source_frames[0]["area_m2"].astype(object)
+        source_frames[0].loc[0, "area_m2"] = "invalid"
+        source_frames[1]["lat"] = source_frames[1]["lat"].astype(object)
+        source_frames[1].loc[0, "lat"] = "not a coordinate"
+        contents = tuple(
+            dataframe.to_csv(index=False).encode("utf-8")
+            for dataframe in source_frames
+        )
+
+        analytical, geospatial = load_uploaded_datasets(contents)
+
+        self.assertEqual(len(analytical), 8)
+        self.assertEqual(len(geospatial), 7)
+        self.assertEqual(len(analytical) - len(geospatial), 1)
+
+    def test_uploaded_sources_with_no_usable_listings_return_actionable_error(self):
+        source_frames = self._upload_source_frames(row_count=1)
+        for dataframe in source_frames:
+            dataframe["area_m2"] = "invalid"
+        contents = tuple(
+            dataframe.to_csv(index=False).encode("utf-8")
+            for dataframe in source_frames
+        )
+
+        with self.assertRaisesRegex(DashboardDataError, "no usable property listings"):
+            load_uploaded_datasets(contents)
 
     def test_default_loader_paths_use_the_processed_data_directory(self):
         analytical, geospatial = self._valid_frames()
@@ -302,6 +424,173 @@ class DashboardDataLoaderTests(unittest.TestCase):
             )
             self.assertEqual(len(app.get("plotly_chart")), 4)
 
+    def test_pages_prompt_for_uploads_when_no_data_is_available(self):
+        project_root = Path(__file__).resolve().parents[1]
+        pages = [
+            project_root / "app" / "Home.py",
+            *sorted((project_root / "app" / "pages").glob("*.py")),
+        ]
+        with patch.object(
+            dashboard_data_loader,
+            "load_processed_datasets",
+            side_effect=DashboardDataError("No local processed files"),
+        ):
+            for page_path in pages:
+                with self.subTest(page=page_path.name):
+                    app = AppTest.from_file(
+                        str(page_path),
+                        default_timeout=60,
+                    ).run()
+
+                    self.assertEqual(len(app.exception), 0)
+                    self.assertEqual(len(app.get("file_uploader")), 3)
+                    self.assertTrue(app.info)
+
+    def test_uploaded_data_is_shared_when_navigating_between_pages(self):
+        project_root = Path(__file__).resolve().parents[1]
+        home_page = project_root / "app" / "Home.py"
+        source_contents = self._upload_source_contents()
+        with patch.object(
+            dashboard_data_loader,
+            "load_processed_datasets",
+            side_effect=DashboardDataError("No local processed files"),
+        ):
+            app = AppTest.from_file(
+                str(home_page),
+                default_timeout=60,
+            ).run()
+            for index, (filename, contents) in enumerate(
+                zip(SOURCE_FILENAMES, source_contents, strict=True)
+            ):
+                app.get("file_uploader")[index].upload(
+                    filename,
+                    contents,
+                    "text/csv",
+                ).run()
+
+            self.assertEqual(len(app.exception), 0)
+            home_metrics = {metric.label: metric.value for metric in app.metric}
+            self.assertEqual(home_metrics["Property records"], "90")
+
+            app.switch_page("pages/1_Market_Explorer.py").run()
+            self.assertEqual(len(app.exception), 0)
+            explorer_metrics = {metric.label: metric.value for metric in app.metric}
+            self.assertEqual(explorer_metrics["Listings"], "90")
+
+            app.switch_page("pages/2_Geographic_Analysis.py").run()
+            self.assertEqual(len(app.exception), 0)
+            geographic_metrics = {metric.label: metric.value for metric in app.metric}
+            self.assertEqual(geographic_metrics["Selected listings"], "90")
+
+            app.switch_page("pages/3_Price_Drivers.py").run()
+            self.assertEqual(len(app.exception), 0)
+            driver_metrics = {metric.label: metric.value for metric in app.metric}
+            self.assertEqual(driver_metrics["Valid area-price pairs"], "90")
+
+            app.switch_page("pages/4_Methodology.py").run()
+            self.assertEqual(len(app.exception), 0)
+            self.assertTrue(any("original 2,082-record reference dataset" in element.value for element in app.info))
+
+    def test_invalid_upload_schema_is_shown_with_an_actionable_message(self):
+        project_root = Path(__file__).resolve().parents[1]
+        home_page = project_root / "app" / "Home.py"
+        source_frames = self._upload_source_frames()
+        del source_frames[1]["price_mxn"]
+        source_contents = tuple(
+            dataframe.to_csv(index=False).encode("utf-8")
+            for dataframe in source_frames
+        )
+
+        with patch.object(
+            dashboard_data_loader,
+            "load_processed_datasets",
+            side_effect=DashboardDataError("No local processed files"),
+        ):
+            app = AppTest.from_file(
+                str(home_page),
+                default_timeout=60,
+            ).run()
+            for index, (filename, contents) in enumerate(
+                zip(SOURCE_FILENAMES, source_contents, strict=True)
+            ):
+                app.get("file_uploader")[index].upload(
+                    filename,
+                    contents,
+                    "text/csv",
+                ).run()
+
+        self.assertEqual(len(app.exception), 0)
+        error_messages = "\n".join(element.value for element in app.error)
+        self.assertIn("mexico-real-estate-2.csv", error_messages)
+        self.assertIn("price_mxn", error_messages)
+        self.assertIn("matching source CSV", error_messages)
+
+    def test_partial_upload_requests_the_remaining_source_files(self):
+        project_root = Path(__file__).resolve().parents[1]
+        home_page = project_root / "app" / "Home.py"
+        source_contents = self._upload_source_contents()
+
+        with patch.object(
+            dashboard_data_loader,
+            "load_processed_datasets",
+            side_effect=DashboardDataError("No local processed files"),
+        ):
+            app = AppTest.from_file(
+                str(home_page),
+                default_timeout=60,
+            ).run()
+            for index in range(2):
+                app.get("file_uploader")[index].upload(
+                    SOURCE_FILENAMES[index],
+                    source_contents[index],
+                    "text/csv",
+                ).run()
+
+        self.assertEqual(len(app.exception), 0)
+        warning_messages = "\n".join(element.value for element in app.warning)
+        self.assertIn("mexico-real-estate-3.csv", warning_messages)
+
+    def test_clear_uploads_resets_the_session_to_the_no_data_state(self):
+        project_root = Path(__file__).resolve().parents[1]
+        home_page = project_root / "app" / "Home.py"
+        source_contents = self._upload_source_contents()
+
+        with patch.object(
+            dashboard_data_loader,
+            "load_processed_datasets",
+            side_effect=DashboardDataError("No local processed files"),
+        ):
+            app = AppTest.from_file(
+                str(home_page),
+                default_timeout=60,
+            ).run()
+            for index, (filename, contents) in enumerate(
+                zip(SOURCE_FILENAMES, source_contents, strict=True)
+            ):
+                app.get("file_uploader")[index].upload(
+                    filename,
+                    contents,
+                    "text/csv",
+                ).run()
+            self.assertEqual(len(app.exception), 0)
+            self.assertTrue(
+                any(metric.label == "Property records" for metric in app.metric)
+            )
+
+            clear_button = next(
+                button
+                for button in app.button
+                if button.label == "Clear uploaded sources"
+            )
+            clear_button.click().run()
+
+        self.assertEqual(len(app.exception), 0)
+        self.assertFalse(app.metric)
+        self.assertTrue(
+            all(uploader.value is None for uploader in app.get("file_uploader"))
+        )
+        self.assertTrue(app.info)
+
     def test_market_explorer_updates_all_outputs_for_a_state_filter(self):
         analytical, _ = self._dashboard_frames()
         state = available_category_values(analytical, "state")[0]
@@ -344,7 +633,10 @@ class DashboardDataLoaderTests(unittest.TestCase):
             }["Listings"]
             self.assertNotEqual(filtered_count, f"{len(analytical):,}")
 
-            app.button[0].click().run()
+            reset_button = next(
+                button for button in app.button if button.label == "Reset filters"
+            )
+            reset_button.click().run()
 
             self.assertEqual(len(app.exception), 0)
             displayed_metrics = {metric.label: metric.value for metric in app.metric}

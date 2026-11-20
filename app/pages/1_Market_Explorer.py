@@ -8,7 +8,7 @@ from src.dashboard.charts import (
     listing_price_chart,
     property_size_chart,
 )
-from src.dashboard.data_loader import DashboardDataError, load_processed_datasets
+from src.dashboard.data_upload import load_dashboard_datasets
 from src.dashboard.filtering import (
     available_category_values,
     filter_properties,
@@ -64,11 +64,10 @@ st.markdown(
     "Every metric, chart, table, and export below uses the same filtered records."
 )
 
-try:
-    analytical, _ = load_processed_datasets()
-except DashboardDataError as exc:
-    st.error(str(exc))
+datasets = load_dashboard_datasets()
+if datasets is None:
     st.stop()
+analytical, _ = datasets
 
 state_options = available_category_values(analytical, "state")
 property_type_options = available_category_values(analytical, "property_type")
