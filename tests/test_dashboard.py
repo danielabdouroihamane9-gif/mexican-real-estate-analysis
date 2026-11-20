@@ -1,0 +1,198 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+import pandas as pd
+from streamlit.testing.v1 import AppTest
+
+from src.dashboard.data_loader import (
+    DashboardDataError,
+    load_processed_datasets,
+)
+from src.dashboard.metrics import (
+    aggregate_property_types,
+    aggregate_states,
+    calculate_market_metrics,
+)
+
+
+class DashboardDataLoaderTests(unittest.TestCase):
+    def setUp(self):
+        load_processed_datasets.clear()
+
+    def tearDown(self):
+        load_processed_datasets.clear()
+
+    def _write_pair(self, directory: Path, analytical: pd.DataFrame, geospatial: pd.DataFrame):
+        analytical_path = directory / "analytical.csv"
+        geospatial_path = directory / "geospatial.csv"
+        analytical.to_csv(analytical_path, index=False)
+        geospatial.to_csv(geospatial_path, index=False)
+        return analytical_path, geospatial_path
+
+    def _valid_frames(self):
+        common = {
+            "source_dataset": ["source.csv"],
+            "property_type": ["house"],
+            "state": ["Puebla"],
+            "area_m2": [100.0],
+            "price_usd": [10000.0],
+            "price_mxn": [None],
+            "conversion_rate_mxn_per_usd": [None],
+            "price_per_m2": [100.0],
+        }
+        analytical = pd.DataFrame(common)
+        geospatial = analytical.assign(lat=[19.0], lon=[-98.0])
+        return analytical, geospatial
+
+    def test_loads_both_processed_datasets(self):
+        analytical, geospatial = self._valid_frames()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            paths = self._write_pair(Path(temporary_directory), analytical, geospatial)
+            loaded_analytical, loaded_geospatial = load_processed_datasets(*paths)
+        self.assertEqual(loaded_analytical.shape, (1, 8))
+        self.assertEqual(loaded_geospatial.shape, (1, 10))
+
+    def test_missing_file_has_actionable_error(self):
+        analytical, geospatial = self._valid_frames()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            analytical_path, _ = self._write_pair(
+                Path(temporary_directory), analytical, geospatial
+            )
+            missing_path = Path(temporary_directory) / "missing.csv"
+            with self.assertRaisesRegex(DashboardDataError, "Run `python -m src.real_estate_analysis`"):
+                load_processed_datasets(analytical_path, missing_path)
+
+    def test_missing_columns_are_rejected(self):
+        analytical, geospatial = self._valid_frames()
+        del analytical["state"]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            paths = self._write_pair(Path(temporary_directory), analytical, geospatial)
+            with self.assertRaisesRegex(DashboardDataError, "state"):
+                load_processed_datasets(*paths)
+
+    def test_empty_dataset_is_rejected(self):
+        analytical, geospatial = self._valid_frames()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            analytical_path, geospatial_path = self._write_pair(
+                Path(temporary_directory), analytical, geospatial
+            )
+            analytical.iloc[0:0].to_csv(analytical_path, index=False)
+            with self.assertRaisesRegex(DashboardDataError, "empty"):
+                load_processed_datasets(analytical_path, geospatial_path)
+
+    def test_real_processed_datasets_have_valid_integrity(self):
+        analytical, geospatial = load_processed_datasets()
+        self.assertFalse(analytical.empty)
+        self.assertFalse(geospatial.empty)
+        self.assertTrue(analytical["area_m2"].gt(0).all())
+        self.assertTrue(analytical["price_usd"].gt(0).all())
+        self.assertTrue(geospatial["lat"].between(-90, 90).all())
+        self.assertTrue(geospatial["lon"].between(-180, 180).all())
+
+    def test_market_metrics_are_calculated_from_input(self):
+        dataframe = pd.DataFrame(
+            {
+                "state": ["Puebla", "Jalisco", "Puebla"],
+                "price_usd": [100_000, 300_000, 200_000],
+                "area_m2": [100, 200, 300],
+                "price_per_m2": [1_000, 1_500, 2_000],
+            }
+        )
+
+        metrics = calculate_market_metrics(dataframe)
+
+        self.assertEqual(metrics.total_records, 3)
+        self.assertEqual(metrics.state_count, 2)
+        self.assertEqual(metrics.median_price_usd, 200_000)
+        self.assertEqual(metrics.median_area_m2, 200)
+        self.assertEqual(metrics.median_price_per_m2, 1_500)
+
+    def test_market_metrics_ignore_missing_and_non_numeric_values(self):
+        dataframe = pd.DataFrame(
+            {
+                "state": ["Puebla", None, "Puebla"],
+                "price_usd": [100_000, None, "not a price"],
+                "area_m2": [100, float("inf"), None],
+                "price_per_m2": [1_000, None, 2_000],
+            }
+        )
+
+        metrics = calculate_market_metrics(dataframe)
+
+        self.assertEqual(metrics.total_records, 3)
+        self.assertEqual(metrics.state_count, 1)
+        self.assertEqual(metrics.median_price_usd, 100_000)
+        self.assertEqual(metrics.median_area_m2, 100)
+        self.assertEqual(metrics.median_price_per_m2, 1_500)
+
+    def test_market_metrics_handle_empty_datasets(self):
+        metrics = calculate_market_metrics(
+            pd.DataFrame(
+                columns=["state", "price_usd", "area_m2", "price_per_m2"]
+            )
+        )
+
+        self.assertEqual(metrics.total_records, 0)
+        self.assertEqual(metrics.state_count, 0)
+        self.assertIsNone(metrics.median_price_usd)
+        self.assertIsNone(metrics.median_area_m2)
+        self.assertIsNone(metrics.median_price_per_m2)
+
+    def test_market_metrics_handle_missing_columns(self):
+        metrics = calculate_market_metrics(pd.DataFrame({"property_type": ["house"]}))
+
+        self.assertEqual(metrics.state_count, 0)
+        self.assertIsNone(metrics.median_price_usd)
+        self.assertIsNone(metrics.median_area_m2)
+        self.assertIsNone(metrics.median_price_per_m2)
+
+    def test_property_type_aggregation_omits_missing_categories(self):
+        counts = aggregate_property_types(
+            pd.DataFrame(
+                {"property_type": ["house", "apartment", "house", None, "land"]}
+            )
+        )
+
+        self.assertEqual(
+            counts.to_dict("records"),
+            [
+                {"property_type": "house", "listings": 2},
+                {"property_type": "apartment", "listings": 1},
+                {"property_type": "land", "listings": 1},
+            ],
+        )
+
+    def test_state_aggregation_uses_existing_values_and_handles_empty_data(self):
+        counts = aggregate_states(
+            pd.DataFrame({"state": ["Puebla", "Jalisco", "Puebla", None]})
+        )
+        empty_counts = aggregate_states(pd.DataFrame(columns=["state"]))
+
+        self.assertEqual(
+            counts.to_dict("records"),
+            [
+                {"state": "Puebla", "listings": 2},
+                {"state": "Jalisco", "listings": 1},
+            ],
+        )
+        self.assertEqual(list(empty_counts.columns), ["state", "listings"])
+        self.assertTrue(empty_counts.empty)
+
+    def test_home_uses_the_processed_dataset_loader(self):
+        analytical, _ = load_processed_datasets()
+        home_page = Path(__file__).resolve().parents[1] / "app" / "Home.py"
+
+        app = AppTest.from_file(str(home_page), default_timeout=30).run()
+
+        self.assertEqual(len(app.exception), 0)
+        displayed_metrics = {metric.label: metric.value for metric in app.metric}
+        self.assertEqual(
+            displayed_metrics["Property records"],
+            f"{len(analytical):,}",
+        )
+        self.assertEqual(len(app.get("plotly_chart")), 4)
+
+
+if __name__ == "__main__":
+    unittest.main()
