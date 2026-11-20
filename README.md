@@ -57,14 +57,43 @@ relevant location differences.
 
 ## Dashboard screenshots
 
-No screenshots are currently included. If screenshots are added, place reviewed
-captures at these paths and link them here:
+Screenshots below were captured from the working dashboard. Expand a section
+to preview each page.
 
-- `docs/screenshots/market-overview.png`
-- `docs/screenshots/market-explorer.png`
-- `docs/screenshots/geographic-analysis.png`
-- `docs/screenshots/price-drivers.png`
-- `docs/screenshots/methodology.png`
+<details>
+<summary>Market Overview</summary>
+
+![Market Overview dashboard screenshot](docs/screenshots/market-overview.png)
+
+</details>
+
+<details>
+<summary>Market Explorer</summary>
+
+![Market Explorer dashboard screenshot](docs/screenshots/market-explorer.png)
+
+</details>
+
+<details>
+<summary>Geographic Analysis</summary>
+
+![Geographic Analysis dashboard screenshot](docs/screenshots/geographic-analysis.png)
+
+</details>
+
+<details>
+<summary>Price Drivers</summary>
+
+![Price Drivers dashboard screenshot](docs/screenshots/price-drivers.png)
+
+</details>
+
+<details>
+<summary>Methodology</summary>
+
+![Methodology dashboard screenshot](docs/screenshots/methodology.png)
+
+</details>
 
 ## Dashboard features
 
@@ -194,6 +223,8 @@ mexican-real-estate-analysis/
 │   ├── README.md
 │   ├── raw/                         # local inputs; git-ignored
 │   └── processed/                   # local outputs; git-ignored
+├── docs/
+│   └── screenshots/                 # dashboard page captures
 ├── notebooks/
 ├── src/
 │   ├── dashboard/
@@ -303,7 +334,6 @@ The application has **not** been deployed.
   conversion basis if the required source information becomes available.
 - Obtain unique listing identifiers and richer location/property variables.
 - Evaluate additional model diagnostics and more detailed spatial methods.
-- Add reviewed dashboard screenshots after they are captured.
 
 ## Author
 
